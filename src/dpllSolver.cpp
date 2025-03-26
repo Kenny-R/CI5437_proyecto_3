@@ -1,22 +1,30 @@
 #include "dpllSolver.h"
-#include <iostream>
-#include <sstream>
-#include <fstream>
-#include <map>
-#include <set>
+volatile bool debug_pause = true;
 
-std::vector<std::vector<int>> parse_DIMACS_to_clauses(std::string dimacs)
+std::tuple<std::vector<std::vector<int>>, std::set<int>> parse_DIMACS_to_clauses(std::string dimacs)
 {
 	std::vector<std::vector<int>> clauses;
 	std::vector<int> clause;
+	std::set<int> variables;
 	std::istringstream iss(dimacs);
 	std::string line;
+	int num_variables = 0;
+	int num_clauses = 0;
 
 	while (std::getline(iss, line))
 	{
 		// Ignorar líneas que comienzan con 'c', 'p' o '%'
-		if (line.empty() || line[0] == 'c' || line[0] == 'p' || line[0] == '%')
+		if (line.empty() || line[0] == 'c' || line[0] == '%')
 		{
+			continue;
+		}
+
+		if (line[0] == 'p')
+		{
+			// Línea de encabezado: p cnf <num_variables> <num_clauses>
+			std::istringstream iss_header(line);
+			std::string temp;
+			iss_header >> temp >> temp >> num_variables >> num_clauses;
 			continue;
 		}
 
@@ -26,9 +34,7 @@ std::vector<std::vector<int>> parse_DIMACS_to_clauses(std::string dimacs)
 		{
 			if (lit == 0)
 			{
-				// Fin de una cláusul
-				// esto es que tenga la forma a b c ... 0
-				// si empieza con 0 ignoramos
+				// Fin de una cláusula
 				if (!clause.empty())
 				{
 					clauses.push_back(clause);
@@ -39,17 +45,30 @@ std::vector<std::vector<int>> parse_DIMACS_to_clauses(std::string dimacs)
 			{
 				// Añadir literal a la cláusula actual
 				clause.push_back(lit);
+				variables.insert(std::abs(lit));
 			}
 		}
 	}
 
-	// si la ultima clausula no tiene un 0 igual lo tomamos como valido
+	// Si la última cláusula no tiene un 0, igual la tomamos como válida
 	if (!clause.empty())
 	{
 		clauses.push_back(clause);
 	}
 
-	return clauses;
+	// Verificar que la cantidad de cláusulas coincida con la especificada en el encabezado
+	if (clauses.size() != num_clauses)
+	{
+		throw std::runtime_error("La cantidad de cláusulas no coincide con la especificada en el archivo.");
+	}
+
+	// Verificar que las variables estén dentro del rango especificado
+	if (*variables.rbegin() > num_variables)
+	{
+		throw std::runtime_error("Se encontraron variables fuera del rango especificado en el archivo.");
+	}
+
+	return {clauses, variables};
 }
 
 std::pair<std::set<int>, std::set<int>> get_unit_clauses_and_pure_literals(const std::vector<std::vector<int>> &clauses)
@@ -187,9 +206,204 @@ bool dpll_solver_rec(std::vector<std::vector<int>> &clauses, std::map<int, bool>
 	}
 }
 
+bool dpll_solver_rec_mk2(std::vector<std::vector<int>> &clauses, std::set<int> symbols, std::map<int, bool> model)
+{
+	std::set<int> unit_clauses;
+	std::set<int> pure_literals;
+	std::map<int, int> literal_counts;
+	std::set<int> unvalued_literals;
+	int true_clauses = 0;
+	bool empty_clause = true;
+	// asm("int3");
+
+	// Este for busca por todas las clausulas chequeando varias cosas.
+	for (const auto &clause : clauses)
+	{
+		unvalued_literals.clear();
+		for (int literal : clause)
+		{
+			if (model.find(abs(literal)) != model.end())
+			{
+				if ((literal > 0 && model[abs(literal)]) || (literal < 0 && !model[abs(literal)]))
+				{	
+					unvalued_literals.clear();
+					true_clauses++;
+					empty_clause = false;
+					break;
+				}
+			}
+			else
+			{
+				empty_clause = false;
+				literal_counts[literal]++;
+				unvalued_literals.insert(literal);
+				if (literal_counts[-literal] > 0)
+				{
+					pure_literals.erase(literal);
+					pure_literals.erase(-literal);
+				}
+				else
+				{
+					pure_literals.insert(literal);
+				}
+			}
+		}
+
+
+		if (empty_clause)
+		{
+			std::cout << "Clausula vacía encontrada." << std::endl;
+			return false;
+		}
+
+		if (unvalued_literals.size() == 1)
+		{
+			// std::cout << "Literal no evaluado: ";
+			// for (int lit : unvalued_literals)
+			// {
+			// 	std::cout << lit << " ";
+			// }
+			// std::cout << std::endl;
+
+			// std::cout << "Modelo actual: ";
+			// for (const auto &[key, value] : model)
+			// {
+			// 	std::cout << key << "=" << value << " ";
+			// }
+			// std::cout << std::endl;
+
+			// std::cout << "Cláusula unitaria encontrada: ";
+			// for (int lit : clause)
+			// {
+			// 	std::cout << lit << " ";
+			// }
+			// std::cout << std::endl;
+
+			// std::cout << "Conteo de literales: ";
+			// for (const auto &[literal, count] : literal_counts)
+			// {
+			// 	std::cout << literal << "=" << count << " ";
+			// }
+			// std::cout << std::endl;
+
+			// asm("int3");
+
+			unit_clauses.insert(*unvalued_literals.begin());
+		}
+	}
+
+	if (true_clauses == clauses.size())
+	{
+		std::cout << "Todas las clausulas son verdaderas." << std::endl;
+		return true;
+	}
+
+	// Si hay un literal puro lo asignamos y volvemos a ejecutar la funcion
+	if (!pure_literals.empty())
+	{
+		int pure_literal = *pure_literals.begin();
+		model[abs(pure_literal)] = (pure_literal > 0);
+		symbols.erase(abs(pure_literal));
+		std::cout << "Llamada recursiva con literales puros: " << pure_literal << std::endl;
+		std::cout << "Símbolos restantes: ";
+		for (int symbol : symbols)
+		{
+			std::cout << symbol << " ";
+		}
+		std::cout << std::endl;
+		std::cout << "Modelo actual: ";
+		for (const auto &[key, value] : model)
+		{
+			std::cout << key << "=" << value << " ";
+		}
+		std::cout << std::endl;
+
+		std::cout << "Literales puros encontrados: ";
+		for (int pure_literal : pure_literals)
+		{
+			std::cout << pure_literal << " ";
+		}
+		std::cout << std::endl;
+		return dpll_solver_rec_mk2(clauses, symbols, model);
+	}
+
+	// si llegaste aquí ya no hay literales puros ahora vamos a
+	// buscar si hay clausulas unitarias si hay una la asignamos
+	// y volvemos a ejecutar la funcion
+	if (!unit_clauses.empty())
+	{
+		int unit_clause = *unit_clauses.begin();
+		model[abs(unit_clause)] = (unit_clause > 0);
+		symbols.erase(abs(unit_clause));
+		std::cout << "Llamada recursiva con clausula unitaria: " << unit_clause << std::endl;
+		std::cout << "Símbolos restantes: ";
+		for (int symbol : symbols)
+		{
+			std::cout << symbol << " ";
+		}
+		std::cout << std::endl;
+		std::cout << "Modelo actual: ";
+		for (const auto &[key, value] : model)
+		{
+			std::cout << key << "=" << value << " ";
+		}
+		std::cout << std::endl;
+		return dpll_solver_rec_mk2(clauses, symbols, model);
+	}
+
+	// si llegaste aquí no hay clausulas unitarias ni literales puros
+	// por lo que vamos a asignar un literal arbitrario
+	// y volvemos a ejecutar la funcion
+
+	if (symbols.empty())
+	{
+		// si llegaste aquí no hay más símbolos para asignar
+		// por lo que la fórmula es insatisfacible con la asignación que tienes
+		std::cout << "No hay más símbolos para asignar." << std::endl;
+		// asm("int3");
+		return false;
+	}
+	int literal = symbols.extract(symbols.begin()).value();
+
+	// model sera para el caso en que el literal sea verdadero
+
+	std::map<int, bool> model_copy = model;
+	model[abs(literal)] = (literal > 0);
+
+	std::cout << "Llamada con literal arbitrario: " << literal << std::endl;
+	std::cout << "Símbolos restantes: ";
+	for (int symbol : symbols)
+	{
+		std::cout << symbol << " ";
+	}
+	std::cout << std::endl;
+	std::cout << "Modelo actual: ";
+	for (const auto &[key, value] : model)
+	{
+		std::cout << key << "=" << value << " ";
+	}
+	std::cout << std::endl;
+	std::cout << "Probando literal: " << literal << " con valor: " << (literal > 0) << std::endl;
+
+	bool result = dpll_solver_rec_mk2(clauses, symbols, model);
+
+	if (result)
+	{
+		return result;
+	}
+	else
+	{
+		std::cout << "No hubo solución con el valor anterior. Literal: " << literal << ", valor anterior: " << (literal > 0) << ". Probando con el valor: " << !(literal > 0) << std::endl;
+
+		model[abs(literal)] = !(literal > 0);
+		return dpll_solver_rec_mk2(clauses, symbols, model);
+	}
+}
+
 std::pair<bool, std::map<int, bool>> dpll_solver(std::string dimacs_file_path)
 {
 
+	std::cout << "Solving " << dimacs_file_path << std::endl;
 	// Read the file content into a string
 	std::ifstream file(dimacs_file_path);
 	if (!file)
@@ -203,12 +417,14 @@ std::pair<bool, std::map<int, bool>> dpll_solver(std::string dimacs_file_path)
 	file.close();
 
 	// Convert the DIMACS string into clauses
-	std::vector<std::vector<int>> clauses = parse_DIMACS_to_clauses(dimacs_clauses);
+	auto [clauses, symbols] = parse_DIMACS_to_clauses(dimacs_clauses);
 
 	// Solve the problem using the DPLL solver
 	std::map<int, bool> model;
 
-	bool result = dpll_solver_rec(clauses, model);
-	
+	// bool result = dpll_solver_rec(clauses, model);
+
+	bool result = dpll_solver_rec_mk2(clauses, symbols, model);
+
 	return {result, model};
 }

@@ -2,7 +2,7 @@
 CXX = g++
 
 # Compiler flags
-CXXFLAGS = -std=c++17 -Wno-reorder -Wall -I./src/include
+CXXFLAGS = -std=c++17 -Wno-reorder -Wall -g  -I./src/include
 
 # Source files
 DPLL_SRCS = src/dpllSolver.cpp src/dpllSolverMain.cpp 

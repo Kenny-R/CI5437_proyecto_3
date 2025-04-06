@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <chrono>
 #include "include/dpllSolver.h"
 
 int main(int argc, char *argv[])
@@ -12,17 +13,27 @@ int main(int argc, char *argv[])
 
 	std::string dimacs_file_path = argv[1];
 
+	// Start measuring time
+	auto start_time = std::chrono::high_resolution_clock::now();
+
 	auto [result, model] = dpll_solver(dimacs_file_path);
+
+	// Stop measuring time
+	auto end_time = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> elapsed_time = end_time - start_time;
 
 	// Output the result
 	if (result)
 	{
-		std::cout << "se logro" << std::endl;
+		std::cout << "SATISFIABLE" << std::endl;
 	}
 	else
 	{
-		std::cout << "no se logro." << std::endl;
+		std::cout << "UNSATISFIABLE" << std::endl;
 	}
+
+	// Output the elapsed time
+	std::cout << "Time: " << elapsed_time.count() << " seconds" << std::endl;
 
 	return 0;
 }

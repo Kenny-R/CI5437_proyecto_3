@@ -1,10 +1,5 @@
 #include "sudokuSolver.h"
 
-#include <vector>
-#include <string>
-#include <fstream>
-#include <map>
-
 /*
  * El codigo utilizado para pasar de un sudoku a un archivo DIMACS fue tomado de: 
  * https://users.aalto.fi/~tjunttil/2020-DP-AUT/notes-sat/solving.html
@@ -44,6 +39,17 @@ std::string parse_sudoku_to_DIMACS(std::string sudoku_path)
 		clues.push_back(line);
 	}
 	file.close();
+
+	// Si el sudoku tiene una sola fila, lo convertimos a 9 filas
+	if (clues.size() == 1 && clues[0].size() == 81)
+    {
+        std::string single_line = clues[0];
+        clues.clear();
+        for (int i = 0; i < 81; i += 9)
+        {
+            clues.push_back(single_line.substr(i, 9));
+        }
+    }
 
 	if (clues.size() != N)
 	{
@@ -126,6 +132,15 @@ std::string parse_sudoku_to_DIMACS(std::string sudoku_path)
 			{
 				int value = digits[clues[r - 1][c - 1]];
 				clauses.push_back({var(r, c, value)});
+
+				// Posible mejora: agregar la negación de los demás valores
+				// for (int v = 1; v <= N; v++)
+				// {
+				// 	if (v != value)
+				// 	{
+				// 		clauses.push_back({-var(r, c, v)});
+				// 	}
+				// }
 			}
 		}
 	}
@@ -140,4 +155,38 @@ std::string parse_sudoku_to_DIMACS(std::string sudoku_path)
 		dimacs += "0\n";
 	}
 	return dimacs;
+}
+
+
+std::string parse_model_to_solution(std::map<int, bool> model)
+{
+	std::string solution = "";
+	for (int r = 1; r <= N; r++)
+	{
+		for (int c = 1; c <= N; c++)
+		{
+			int found_value = 0;
+			for (int v = 1; v <= N; v++)
+			{
+				if (model[var(r, c, v)])
+				{
+					if (found_value != 0)
+					{
+						std::cerr << "Error: Se encontró más de un valor positivo en la celda (" 
+								  << r << ", " << c << ")." << std::endl;
+						return "";
+					}
+					found_value = v;
+				}
+			}
+			if (found_value == 0)
+			{
+				std::cerr << "Error: No se encontró ningún valor positivo en la celda (" 
+						  << r << ", " << c << ")." << std::endl;
+				return "";
+			}
+			solution += std::to_string(found_value);
+		}
+	}
+	return solution;
 }

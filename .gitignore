@@ -32,6 +32,7 @@
 *.app
 
 build/*
-tests/*
+ignorar/*
+ignorar
 
 .vscode/*

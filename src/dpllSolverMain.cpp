@@ -11,6 +11,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	bool show_results = false;
+
 	std::string dimacs_file_path = argv[1];
 
 	// Start measuring time
@@ -34,6 +36,22 @@ int main(int argc, char *argv[])
 
 	// Output the elapsed time
 	std::cout << "Time: " << elapsed_time.count() << " seconds" << std::endl;
+
+	if (show_results && result)
+	{
+		char user_input;
+		std::cout << "¿Desea ver los valores de las variables? (s/n): ";
+		std::cin >> user_input;
+
+		if (user_input == 's' || user_input == 'S')
+		{
+			std::cout << "Valores de las variables:" << std::endl;
+			for (const auto &[variable, value] : model)
+			{
+				std::cout << "Variable " << variable << " = " << (value ? "true" : "false") << std::endl;
+			}
+		}
+	}
 
 	return 0;
 }
